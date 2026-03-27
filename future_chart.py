@@ -46,13 +46,9 @@ def get_trading_date(session: str, holidays: set) -> date:
     if session == "day":
         if _is_trading_day(today, holidays) and (now.hour > 8 or (now.hour == 8 and now.minute >= 45)):
             return today
-        return _prev_trading_day(today, holidays)
-    else:  # night
-        if now.hour >= 18 and _is_trading_day(today, holidays):
-            return today
-        if now.hour < 6:
-            return _prev_trading_day(today, holidays)
-        return _prev_trading_day(today, holidays)
+    elif now.hour >= 18 and _is_trading_day(today, holidays):
+        return today
+    return _prev_trading_day(today, holidays)
 
 
 def format_time_column(df: pd.DataFrame, session: str, holidays: set) -> tuple[pd.Series, int]:
@@ -62,26 +58,21 @@ def format_time_column(df: pd.DataFrame, session: str, holidays: set) -> tuple[p
     result = []
     boundary = len(times)
 
+    next_day = base + timedelta(days=1)
+    is_night = session == "night"
+
     for i, t in enumerate(times):
-        h, m, s = int(t[:2]), int(t[2:4]), int(t[4:6])
         ti = int(t)
 
-        if i > 0:
-            prev_ti = int(times[i - 1])
-            if session == "day":
-                if ti > prev_ti:
-                    boundary = i
-                    break
-            else:
-                if prev_ti >= 180000 and ti < 180000:
-                    boundary = i
-                    break
+        if i > 0 and (
+            (not is_night and ti > int(times[i - 1]))
+            or (is_night and int(times[i - 1]) >= 180000 and ti < 180000)
+        ):
+            boundary = i
+            break
 
-        if session == "night" and h < 18:
-            d = base + timedelta(days=1)
-        else:
-            d = base
-        result.append(f"{d} {h:02d}:{m:02d}:{s:02d}")
+        d = next_day if is_night and ti < 180000 else base
+        result.append(f"{d} {ti // 10000:02d}:{ti // 100 % 100:02d}:{ti % 100:02d}")
 
     return pd.Series(result, index=df.index[:boundary]), boundary
 
@@ -126,21 +117,18 @@ def get_future_chart(token: str, focode: str, session: str = "day", bgubun: int 
         return pd.DataFrame()
 
     df = pd.DataFrame(rows)
-    df["shcode"] = focode
     df["time"] = df["chetime"]
     if holidays is not None:
         time_series, boundary = format_time_column(df, session, holidays)
         df = df.iloc[:boundary].reset_index(drop=True)
         df["time"] = time_series
-    for col in ["open", "high", "low"]:
-        df[col] = pd.to_numeric(df[col])
-    df["close"] = pd.to_numeric(df["price"])
-    change = pd.to_numeric(df["change"])
+    df["shcode"] = focode
+    num_cols = ["open", "high", "low", "price", "change", "volume", "cvolume"]
+    df[num_cols] = df[num_cols].apply(pd.to_numeric)
+    df["close"] = df["price"]
+    change = df["change"]
     df["ch"] = change.where(df["sign"].isin(["1", "2", "3"]), -change)
-    prev_close = df["close"] - df["ch"]
-    df["chp"] = (df["ch"] / prev_close * 100).round(2)
-    df["volume"] = pd.to_numeric(df["volume"])
-    df["cvolume"] = pd.to_numeric(df["cvolume"])
+    df["chp"] = (df["ch"] / (df["close"] - df["ch"]) * 100).round(2)
     return df[["shcode", "time", "open", "high", "low", "close", "ch", "chp", "volume", "cvolume"]]
 
 
@@ -164,22 +152,41 @@ def get_front_shcode(token: str, key: str) -> tuple[str, str, str]:
 if __name__ == "__main__":
     token_info = get_access_token()
     token = token_info["access_token"]
+    token_issued = time.time()
+    expires_in = token_info["expires_in"]
+    print(token_issued, expires_in)
     holidays = get_krx_holidays()
+    current_date = date.today()
 
     targets = [
-        ("kospi", "day", ""),
-        ("kosdaq", "day", ""),
-        ("night_kospi", "night", " 야간"),
-        ("night_kosdaq", "night", " 야간"),
+        ("kospi", "day"),
+        ("kosdaq", "day"),
+        ("night_kospi", "night"),
+        ("night_kosdaq", "night"),
     ]
 
-    for i, (key, session, suffix) in enumerate(targets):
-        if i > 0:
-            time.sleep(2)
-        shcode, hname, label = get_front_shcode(token, key)
-        df = get_future_chart(token, focode=shcode, session=session, holidays=holidays)
-        if df.empty:
-            print("조회된 데이터가 없습니다.")
-        else:
-            df["shcode"] = label
-            print(df)
+    while True:
+        # 날짜 변경 시 holidays 갱신
+        if date.today() != current_date:
+            current_date = date.today()
+            holidays = get_krx_holidays()
+
+        # 토큰 만료 5분 전 재발급
+        if time.time() - token_issued > expires_in - 300:
+            token_info = get_access_token()
+            token = token_info["access_token"]
+            token_issued = time.time()
+            expires_in = token_info["expires_in"]
+
+        for i, (key, session) in enumerate(targets):
+            if i > 0:
+                time.sleep(2)
+            shcode, hname, label = get_front_shcode(token, key)
+            df = get_future_chart(token, focode=shcode, session=session, holidays=holidays)
+            if df.empty:
+                print("조회된 데이터가 없습니다.")
+            else:
+                df["shcode"] = label
+                print(df)
+
+        time.sleep(60)
