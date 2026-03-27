@@ -1,0 +1,5 @@
+.env
+.DS_store
+__pycache__/
+.claude/
+.DS_store
