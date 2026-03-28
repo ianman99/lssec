@@ -1,9 +1,11 @@
 import os
 import time
+import threading
 from datetime import date, datetime, timedelta
 
 import pandas as pd
 import requests
+import socketio
 from sqlalchemy import create_engine
 
 from auth import BASE_URL, get_access_token
@@ -149,14 +151,67 @@ def get_front_shcode(token: str, key: str) -> tuple[str, str, str]:
     return front.iloc[0]["shcode"], front.iloc[0]["hname"], label
 
 
+LOCAL_SERVER_URL = os.getenv("SERVER_URL")
+server_sio = socketio.Client()
+reconnect_lock = threading.Lock()
+
+
+@server_sio.event
+def connect():
+    print("로컬 서버 연결 성공")
+
+
+@server_sio.event
+def disconnect():
+    print("로컬 서버 연결 해제")
+
+
+def connect_local_websocket():
+    time.sleep(1)
+    while True:
+        try:
+            if server_sio.connected:
+                break
+            server_sio.connect(LOCAL_SERVER_URL, namespaces=["/host"])
+            break
+        except Exception as e:
+            print(f"로컬 서버 연결 실패: {e}")
+            try:
+                server_sio.disconnect()
+            except Exception:
+                pass
+            time.sleep(2)
+
+
+def reconnect_local_websocket():
+    with reconnect_lock:
+        if server_sio.connected:
+            return
+        try:
+            server_sio.disconnect()
+        except Exception:
+            pass
+        connect_local_websocket()
+
+
+def send_to_server(df: pd.DataFrame):
+    try:
+        data = df.to_dict(orient="records")
+        server_sio.emit("futureDataKor", data, namespace="/host")
+    except Exception as e:
+        print(f"데이터 전송 오류: {e}")
+        reconnect_local_websocket()
+
+
 if __name__ == "__main__":
     token_info = get_access_token()
     token = token_info["access_token"]
     token_issued = time.time()
     expires_in = token_info["expires_in"]
-    print(token_issued, expires_in)
     holidays = get_krx_holidays()
     current_date = date.today()
+
+    connect_local_websocket()
 
     targets = [
         ("kospi", "day"),
@@ -172,7 +227,7 @@ if __name__ == "__main__":
             holidays = get_krx_holidays()
 
         # 토큰 만료 5분 전 재발급
-        if time.time() - token_issued > expires_in - 300:
+        if time.time() - token_issued > expires_in - 600:
             token_info = get_access_token()
             token = token_info["access_token"]
             token_issued = time.time()
@@ -187,6 +242,7 @@ if __name__ == "__main__":
                 print("조회된 데이터가 없습니다.")
             else:
                 df["shcode"] = label
+                send_to_server(df)
                 print(df)
 
         time.sleep(60)
