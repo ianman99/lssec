@@ -197,7 +197,7 @@ def reconnect_local_websocket():
 def send_to_server(df: pd.DataFrame):
     try:
         data = df.to_dict(orient="records")
-        server_sio.emit("futureDataKor", data, namespace="/host")
+        server_sio.emit("indexFutureDataKor", data, namespace="/host")
     except Exception as e:
         print(f"데이터 전송 오류: {e}")
         reconnect_local_websocket()
@@ -236,13 +236,15 @@ if __name__ == "__main__":
         for i, (key, session) in enumerate(targets):
             if i > 0:
                 time.sleep(2)
-            shcode, hname, label = get_front_shcode(token, key)
-            df = get_future_chart(token, focode=shcode, session=session, holidays=holidays)
-            if df.empty:
-                print("조회된 데이터가 없습니다.")
-            else:
-                df["shcode"] = label
-                send_to_server(df)
-                print(df)
+            try:
+                shcode, hname, label = get_front_shcode(token, key)
+                df = get_future_chart(token, focode=shcode, session=session, holidays=holidays)
+                if df.empty:
+                    print("조회된 데이터가 없습니다.")
+                else:
+                    df["shcode"] = label
+                    send_to_server(df)
+            except Exception as e:
+                print(f"[에러] {key} {session}: {e}")
 
         time.sleep(60)
