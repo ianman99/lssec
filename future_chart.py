@@ -120,6 +120,14 @@ def get_future_chart(token: str, focode: str, session: str = "day", bgubun: int 
 
     df = pd.DataFrame(rows)
     df["time"] = df["chetime"]
+
+    # 미시작 세션 placeholder(volume=0) 제거
+    if not df.empty and str(df.iloc[0]["volume"]) == "0":
+        first_valid = df["volume"].astype(str).ne("0").idxmax()
+        df = df.iloc[first_valid:].reset_index(drop=True)
+        if df.empty:
+            return pd.DataFrame()
+
     if holidays is not None:
         time_series, boundary = format_time_column(df, session, holidays)
         df = df.iloc[:boundary].reset_index(drop=True)
@@ -243,6 +251,7 @@ if __name__ == "__main__":
                     print("조회된 데이터가 없습니다.")
                 else:
                     df["shcode"] = label
+                    print(df)
                     send_to_server(df)
             except Exception as e:
                 print(f"[에러] {key} {session}: {e}")
