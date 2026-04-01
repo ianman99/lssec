@@ -112,6 +112,8 @@ def get_future_chart(token: str, focode: str, session: str = "day", bgubun: int 
     response = requests.post(url, headers=headers, json=body)
     if response.status_code != 200:
         print(f"  [{tr_cd} 오류] status={response.status_code}, body={response.text}")
+        if response.status_code in (401, 500):
+            raise RuntimeError(f"{response.status_code} 서버 오류 - 토큰 갱신 필요")
         return pd.DataFrame()
     data = response.json()
     rows = data.get(out_block, [])
@@ -228,18 +230,33 @@ if __name__ == "__main__":
         ("night_kosdaq", "night"),
     ]
 
+    last_refresh_date = None
+
     while True:
         # 날짜 변경 시 holidays 갱신
         if date.today() != current_date:
             current_date = date.today()
             holidays = get_krx_holidays()
 
-        # 토큰 만료 5분 전 재발급
+        # 토큰 만료 10분 전 재발급
         if time.time() - token_issued > expires_in - 600:
             token_info = get_access_token()
             token = token_info["access_token"]
             token_issued = time.time()
             expires_in = token_info["expires_in"]
+            print(f"토큰 갱신 완료 ({datetime.now().strftime('%H:%M:%S')})")
+
+        # 매일 오전 6시 이후 첫 루프에서 토큰 강제 갱신 (서버측 일괄 만료 대응)
+        now = datetime.now()
+        today = now.date()
+        if now.hour >= 6 and last_refresh_date != today:
+            print("오전 6시 이후 토큰 강제 갱신")
+            token_info = get_access_token()
+            token = token_info["access_token"]
+            token_issued = time.time()
+            expires_in = token_info["expires_in"]
+            last_refresh_date = today
+            print(f"토큰 갱신 완료 ({now.strftime('%H:%M:%S')})")
 
         for i, (key, session) in enumerate(targets):
             if i > 0:
@@ -255,5 +272,13 @@ if __name__ == "__main__":
                     send_to_server(df)
             except Exception as e:
                 print(f"[에러] {key} {session}: {e}")
+                # 500/401 에러 등 토큰 관련 오류 시 재발급 시도
+                if "500" in str(e) or "401" in str(e) or "token" in str(e).lower():
+                    print("토큰 오류 감지, 재발급 시도")
+                    token_info = get_access_token()
+                    token = token_info["access_token"]
+                    token_issued = time.time()
+                    expires_in = token_info["expires_in"]
+                    print(f"토큰 갱신 완료 ({datetime.now().strftime('%H:%M:%S')})")
 
         time.sleep(60)
