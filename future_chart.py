@@ -124,6 +124,8 @@ def get_future_chart(token: str, focode: str, session: str = "day", bgubun: int 
     df["time"] = df["chetime"]
 
     # 미시작 세션 placeholder(volume=0) 제거
+    print(f"[DEBUG] session={session} | 전체행={len(df)} | volume_dtype={df['volume'].dtype}")
+    print(f"[DEBUG] 첫3행 volume={df['volume'].head(3).tolist()}, chetime={df['chetime'].head(3).tolist()}")
     if not df.empty and str(df.iloc[0]["volume"]) == "0":
         first_valid = df["volume"].astype(str).ne("0").idxmax()
         df = df.iloc[first_valid:].reset_index(drop=True)
