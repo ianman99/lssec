@@ -5,7 +5,7 @@ from auth import BASE_URL, get_access_token
 
 
 def get_future_master(token: str, gubun: str = "") -> pd.DataFrame:
-    """지수선물 마스터 조회 (t8432)
+    """지수선물 마스터 조회 (t8467)
 
     Args:
         gubun: V=변동성지수선물, S=섹터지수선물, 그 외=코스피200지수선물
@@ -14,13 +14,13 @@ def get_future_master(token: str, gubun: str = "") -> pd.DataFrame:
     headers = {
         "content-type": "application/json; charset=utf-8",
         "authorization": f"Bearer {token}",
-        "tr_cd": "t8432",
+        "tr_cd": "t8467",
         "tr_cont": "N",
         "tr_cont_key": "",
         "mac_address": "",
     }
     body = {
-        "t8432InBlock": {
+        "t8467InBlock": {
             "gubun": gubun,
         }
     }
@@ -28,7 +28,7 @@ def get_future_master(token: str, gubun: str = "") -> pd.DataFrame:
     response = requests.post(url, headers=headers, json=body)
     response.raise_for_status()
     data = response.json()
-    return pd.DataFrame(data.get("t8432OutBlock", []))
+    return pd.DataFrame(data.get("t8467OutBlock", []))
 
 
 def get_derivative_master(token: str, gubun: str = "SF") -> pd.DataFrame:
