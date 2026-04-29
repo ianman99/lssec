@@ -81,13 +81,13 @@ def format_time_column(df: pd.DataFrame, session: str, holidays: set) -> tuple[p
 
 # (tr_cd, InBlock명, OutBlock명)
 TR_CONFIG = {
-    "day": ("t2216", "t2216InBlock", "t2216OutBlock1"),
+    "day": ("t2209", "t2209InBlock", "t2209OutBlock1"),
     "night": ("t8461", "t8461InBlock", "t8461OutBlock1"),
 }
 
 
 def get_future_chart(token: str, focode: str, session: str = "day", bgubun: int = 1, cnt: int = 740, holidays: set = None) -> pd.DataFrame:
-    """선물 틱분별 차트 조회 (day=t2216, night=t8461)"""
+    """선물 틱분별 차트 조회 (day=t2209, night=t8461)"""
     tr_cd, in_block, out_block = TR_CONFIG[session]
 
     url = f"{BASE_URL}/futureoption/chart"
